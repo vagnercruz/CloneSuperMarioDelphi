@@ -1,0 +1,213 @@
+unit Unit1;
+
+interface
+
+uses
+  Windows, Messages, SysUtils, Classes, Graphics, Controls, Forms,
+  Dialogs, Menus, StdCtrls;
+
+type
+  TForm1 = class(TForm)
+    MainMenu1: TMainMenu;
+    Iniciar1: TMenuItem;
+    procedure Iniciar1Click(Sender: TObject);
+    procedure FormCreate(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
+  private
+    { Private declarations }
+  public
+    { Public declarations }
+  end;
+
+type
+  TSentidoX = (Esquerda,Direita,Parado);
+  TSentidoY = (Cima,Baixo);
+  TBloco = Record
+    BRect: TRect;
+    Index: Integer;
+    Solido: Boolean;
+  end;
+  TAgnaldo = Record
+    ARect: TRect;
+    ImgMascara: TBitmap;
+    Frame: Integer;
+    Visivel: Boolean;
+    SentidoX: TSentidoX;
+    SentidoY: TSentidoY;
+  end;
+
+const
+  COL = 40;
+  LIN = 8;
+  TAM = 16;
+  POT = 4;
+
+var
+  Form1: TForm1;
+  cnjBlocos: array[0..COL,0..LIN] of TBloco;
+  Blocos: array[0..5] of TBitmap;
+  OFFScr: TBitmap;
+  Imagem, Mascara: TBitmap;
+  Mario: TAgnaldo;
+  Res: TBitmap;
+implementation
+
+{$R *.dfm}
+
+procedure TForm1.Iniciar1Click(Sender: TObject);
+procedure Carregar_Imagens(Nome: String);
+var i: Integer;
+    Bmp: TBitmap;
+begin
+  Bmp:= TBitmap.Create;
+  Bmp.LoadFromFile(Nome);
+  for i:= 0 to 5 do
+      begin
+        Blocos[i] := TBitmap.Create;
+        Blocos[i].Width:= TAM;
+        Blocos[i].Height:= TAM;
+        BitBlt(Blocos[i].Canvas.Handle,0,0,TAM,TAM,
+               Bmp.Canvas.Handle,(i * TAM) + 1,1,SrcCopy);
+      end;
+  Bmp.Free;
+end;
+procedure Carregar_Mapa(Nome: String);
+var Arquivo: TextFile;
+    x,y,i: Integer;
+    Temp: Char;
+begin
+  x:=0;y:=0;
+  i:=0;
+  AssignFile(Arquivo,Nome);
+  Reset(Arquivo);
+  while not EOF(Arquivo) do
+        begin
+          Read(Arquivo,Temp);
+
+          Case Temp of
+            #13: Temp:= #48;
+            #10: Temp:= #48;
+            else
+              begin
+                i:= strtoint(Temp);
+                cnjBlocos[x,y].BRect := Rect(x shl POT,y shl POT,
+                                            (x shl POT) + TAM,
+                                            (y shl POT) + TAM);
+                cnjBlocos[x,y].Index := i;
+                if (i>0) and (i<10) then
+                   cnjBlocos[x,y].Solido:= True;
+
+                if x = COL - 1 then
+                   begin
+                     x:=0;
+                     inc(y);
+                   end
+                else
+                   Inc(x);
+              end;
+          end;
+        end;
+  CloseFile(Arquivo);
+end;
+procedure Desenhar_Blocos;
+var x,y,i: Integer;
+begin
+  for x:= 0 to COL  do
+      for y:= 0 to LIN  do
+          with cnjBlocos[x,y] do
+          begin
+            OFFScr.Canvas.Draw(BRect.Left - 1,BRect.Top - 1,Blocos[cnjBlocos[x,y].Index]);
+          end;
+end;
+{ AGNALDO }
+procedure Criar_Imagem(Nome: String);
+begin
+  Imagem:= TBitmap.Create;
+  Imagem.LoadFromFile(Nome);
+
+  Mascara:= TBitmap.Create;
+  Mascara.Assign(Imagem);
+  Mascara.Mask(RGB(255,0,255));
+
+  Mario.ImgMascara:= TBitmap.Create;
+  Mario.ImgMascara.Width := Imagem.Width;
+  Mario.ImgMascara.Height:= Imagem.Height;
+
+  BitBlt(Mario.ImgMascara.Canvas.Handle, 0, 0, Imagem.Width, Imagem.Height,
+         Mascara.Canvas.Handle, 0, 0, SrcCopy);
+  BitBlt(Mario.ImgMascara.Canvas.Handle, 0, 0, Imagem.Width, Imagem.Height,
+         Imagem.Canvas.Handle, 0, 0, SrcErase);
+
+  Canvas.Draw(0,200,Mario.ImgMascara);
+end;
+procedure Desenhar_Mario(x,y,NFRAME: Integer);
+begin
+with Mario do
+begin
+  if Frame > NFRAME then
+     Frame := 0;
+
+  BitBlt(OFFScr.Canvas.Handle,x,y,16,16,Mascara.Canvas.Handle,
+         (Frame * 16) + 1,0,SrcAnd);
+  BitBlt(OFFScr.Canvas.Handle,x,y,16,16,ImgMascara.Canvas.Handle,
+         (Frame * 16) + 1,0,SrcInvert);
+  if Mario.Sentido <> Parado then
+     inc(Frame);
+end;
+end;
+{ TECLADO }
+procedure Ler_Teclado;
+begin
+  if GetKeyState(vk_left)<0 then
+     Mario.SentidoX:= Esquerda
+  else
+     if GetKeyState(vk_right)<0 then
+        Mario.SentidoX:= Direita
+     else
+        Mario.SentidoX:= Parado;
+
+    if GetKeyState(vk_up)<0 then
+     Mario.SentidoY:= Cima
+  else
+     if GetKeyState(vk_down)<0 then
+        Mario.SentidoY:= Baixo;
+
+end;
+var i: Integer;
+begin
+  Carregar_Imagens('001.bmp');
+  Carregar_Mapa('Fase1.txt');
+  Criar_Imagem('Mario.bmp');
+  while not Application.Terminated do
+  begin
+    Desenhar_Blocos;
+    Desenhar_Mario(1,1,4);
+    //Canvas.Draw(0,0,OFFScr);
+    StretchBlt(Res.Canvas.Handle,0,0,320,240,
+           OFFScr.Canvas.Handle,0,0,160,120,SrcCopy);
+    Canvas.Draw(0,0,Res);
+    Application.ProcessMessages;
+  end;
+
+end;
+
+procedure TForm1.FormCreate(Sender: TObject);
+begin
+  OFFScr:= TBitmap.Create;
+  OFFScr.Width:= COL * TAM;
+  OFFScr.Height:= LIN * TAM;
+
+  Res:= TBitmap.Create;
+  Res.Width:= 320;
+  Res.Height:= 240;
+end;
+
+procedure TForm1.FormDestroy(Sender: TObject);
+begin
+  OFFScr.Free;
+end;
+initialization
+  Mario.Frame:=0;
+  Mario.Sentido := Parado;
+end.
+
